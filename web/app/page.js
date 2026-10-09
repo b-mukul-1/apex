@@ -72,6 +72,7 @@ export default function Dashboard() {
   const drawdown = data?.current_drawdown_pct || 0;
   const positions = data?.positions || [];
   const trades = data?.recent_trades || [];
+  const logs = data?.logs || [];
   const sentinel = data?.risk_sentinel || {};
   const telemetry = data?.telemetry || {};
 
@@ -405,6 +406,42 @@ export default function Dashboard() {
               The bot engine runs as a lightweight Docker container or Python service on Railway / Render / DigitalOcean. State is streamed live to this Vercel web portal every 5 seconds.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* 24/7 Live Execution Console Stream */}
+      <div className="glass-panel" id="console-logs-panel" style={{ marginTop: "24px", padding: "20px" }}>
+        <div className="panel-header" style={{ marginBottom: "12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 style={{ fontSize: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <span>💻</span> 24/7 Cloud Engine Live Activity Stream
+          </h2>
+          <span style={{ fontSize: "11px", color: "var(--accent-cyan)", fontFamily: "var(--font-mono)" }}>
+            CYCLE #{data?.iteration_count || 1} • {data?.version || "v1.2.0-sentinel"}
+          </span>
+        </div>
+        <div style={{
+          background: "rgba(0, 0, 0, 0.6)",
+          borderRadius: "8px",
+          padding: "14px",
+          fontFamily: "var(--font-mono)",
+          fontSize: "12px",
+          color: "#94a3b8",
+          lineHeight: "1.7",
+          maxHeight: "220px",
+          overflowY: "auto",
+          border: "1px solid rgba(255, 255, 255, 0.08)"
+        }}>
+          {logs.length > 0 ? (
+            logs.map((logStr, idx) => (
+              <div key={idx} style={{ color: logStr.includes("FILL") ? "var(--accent-emerald)" : logStr.includes("ORDER") ? "var(--accent-cyan)" : logStr.includes("WARN") ? "var(--accent-rose)" : "#cbd5e1" }}>
+                {logStr}
+              </div>
+            ))
+          ) : (
+            <div style={{ color: "var(--text-muted)", fontStyle: "italic" }}>
+              Awaiting next live event tick from cloud daemon...
+            </div>
+          )}
         </div>
       </div>
 
