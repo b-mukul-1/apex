@@ -69,23 +69,33 @@ class LivePaperSession:
         self.webhook_url: Optional[str] = None
         self.api_secret: Optional[str] = None
 
-        # Initialize CCXT exchange client
-        config = {
+        # Initialize CCXT exchange clients
+        # 1. Clean public client for market data (guarantees 100% data uptime without key rejection)
+        self.market_client = ccxt.binanceusdm({
             "enableRateLimit": True,
             "options": {"defaultType": "future"},
-        }
-        if testnet:
-            config["urls"] = {
-                "api": {
-                    "fapiPublic": "https://testnet.binancefuture.com/fapi/v1",
-                    "fapiPrivate": "https://testnet.binancefuture.com/fapi/v1",
-                }
-            }
-        if api_key and api_secret:
-            config["apiKey"] = api_key
-            config["secret"] = api_secret
+        })
 
-        self.exchange = ccxt.binanceusdm(config)
+        # 2. Private exchange client (for testnet execution)
+        self.exchange = self.market_client
+        if api_key and api_secret:
+            try:
+                priv_config = {
+                    "enableRateLimit": True,
+                    "apiKey": api_key,
+                    "secret": api_secret,
+                    "options": {"defaultType": "future"},
+                }
+                if testnet:
+                    priv_config["urls"] = {
+                        "api": {
+                            "fapiPublic": "https://testnet.binancefuture.com/fapi/v1",
+                            "fapiPrivate": "https://testnet.binancefuture.com/fapi/v1",
+                        }
+                    }
+                self.exchange = ccxt.binanceusdm(priv_config)
+            except Exception as e:
+                print(f"[WARN] Failed setting up private credentials: {e}")
 
         # Core APEX modules
         self.cost_model = CostModel()
@@ -131,10 +141,10 @@ class LivePaperSession:
         print("[INIT] Priming strategy indicators with recent live hourly candles from Binance...")
         for sym in self.symbols:
             try:
-                raw_bars = self.exchange.fetch_ohlcv(sym, timeframe="1h", limit=50)
+                raw_bars = self.market_client.fetch_ohlcv(sym, timeframe="1h", limit=50)
                 fr = 0.0001
                 try:
-                    fr_info = self.exchange.fetch_funding_rate(sym)
+                    fr_info = self.market_client.fetch_funding_rate(sym)
                     if fr_info and "fundingRate" in fr_info and fr_info["fundingRate"] is not None:
                         fr = float(fr_info["fundingRate"])
                 except Exception:
@@ -162,7 +172,7 @@ class LivePaperSession:
         """Fetches live ticker and funding rate via CCXT."""
         try:
             t0 = time.time()
-            ticker = self.exchange.fetch_ticker(symbol)
+            ticker = self.market_client.fetch_ticker(symbol)
             latency_ms = (time.time() - t0) * 1000.0
 
             raw_last = ticker.get("last") or ticker.get("close") or 1.0
@@ -184,7 +194,7 @@ class LivePaperSession:
             # Fetch funding rate if available
             funding_rate = 0.0001  # Default 0.01% per 8h
             try:
-                fr_info = self.exchange.fetch_funding_rate(symbol)
+                fr_info = self.market_client.fetch_funding_rate(symbol)
                 if fr_info and "fundingRate" in fr_info and fr_info["fundingRate"] is not None:
                     funding_rate = float(fr_info["fundingRate"])
             except Exception:
