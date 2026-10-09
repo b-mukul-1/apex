@@ -61,8 +61,22 @@ class LivePaperSession:
             "ETH/USDT:USDT",
             "SOL/USDT:USDT",
             "BNB/USDT:USDT",
-            "DOGE/USDT:USDT",
             "XRP/USDT:USDT",
+            "DOGE/USDT:USDT",
+            "1000PEPE/USDT:USDT",
+            "1000SHIB/USDT:USDT",
+            "1000BONK/USDT:USDT",
+            "1000FLOKI/USDT:USDT",
+            "SUI/USDT:USDT",
+            "NEAR/USDT:USDT",
+            "AVAX/USDT:USDT",
+            "ADA/USDT:USDT",
+            "LINK/USDT:USDT",
+            "RENDER/USDT:USDT",
+            "TAO/USDT:USDT",
+            "FET/USDT:USDT",
+            "AAVE/USDT:USDT",
+            "UNI/USDT:USDT",
         ]
         self.poll_interval = poll_interval_sec
         self.testnet = testnet
