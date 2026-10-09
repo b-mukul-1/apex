@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
-
-// In-memory global store for the serverless instance
-let cachedState = null;
-let lastUpdate = 0;
+import { setLatestState, getLatestState } from "../store";
 
 export async function POST(request) {
   try {
@@ -15,15 +12,11 @@ export async function POST(request) {
     }
 
     const payload = await request.json();
-    cachedState = {
-      ...payload,
-      received_at: new Date().toISOString(),
-    };
-    lastUpdate = Date.now();
+    setLatestState(payload);
 
     return NextResponse.json({
       success: true,
-      timestamp: lastUpdate,
+      timestamp: Date.now(),
       status: "STORED",
     });
   } catch (error) {
@@ -32,11 +25,12 @@ export async function POST(request) {
 }
 
 export async function GET() {
-  if (!cachedState) {
+  const state = getLatestState();
+  if (!state) {
     return NextResponse.json({
       status: "WAITING_FOR_DATA",
       message: "No live telemetry pushed from cloud bot yet.",
     });
   }
-  return NextResponse.json(cachedState);
+  return NextResponse.json(state);
 }

@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
+import { getLatestState } from "../store";
 
 export async function GET() {
+  // 1. Check if state was pushed from cloud bot via webhook
+  const pushedState = getLatestState();
+  if (pushedState) {
+    return NextResponse.json({ ...pushedState, source: "LIVE_CLOUD_WEBHOOK" });
+  }
+
   const botApiUrl = process.env.BOT_API_URL;
 
-  // 1. If BOT_API_URL is configured, proxy live state from the 24/7 cloud runner
+  // 2. If BOT_API_URL is configured, proxy live state from the 24/7 cloud runner
   if (botApiUrl) {
     try {
       const res = await fetch(`${botApiUrl}/api/state`, {
@@ -21,8 +28,7 @@ export async function GET() {
     }
   }
 
-  // 2. Otherwise check if state was posted to /api/telemetry
-  // Note: in serverless runtime, we can also generate a robust baseline state
+  // 3. Fallback baseline standby state if bot is starting up
   const now = new Date();
   const simulatedState = {
     source: "APEX_STANDBY_MONITOR",
