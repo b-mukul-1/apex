@@ -27,9 +27,10 @@ RUN uv pip install --system \
     pyarrow==26.0.0 \
     pytest==9.1.1
 
-# Copy code
+# Copy code & historical data
 COPY apex/ ./apex/
 COPY docs/ ./docs/
+COPY data_real/ ./data_real/
 
 # Default environment configurations
 ENV PYTHONUNBUFFERED=1

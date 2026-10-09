@@ -100,8 +100,8 @@ class LivePaperSession:
         self.decay_monitor = SignalDecayMonitor()
 
         # Multi-sleeve strategies
-        self.sleeve_a = SleeveACarryStrategy()
-        self.sleeve_b = SleeveBTrendStrategy()
+        self.sleeve_a = SleeveACarryStrategy(min_annualized_funding_hurdle=0.02)
+        self.sleeve_b = SleeveBTrendStrategy(lookback_breakout=14, ema_trend_filter=30)
         sleeve_c_library = [
             SignalVolSqueeze(),
             SignalCrossSectionalMom(),
@@ -117,7 +117,7 @@ class LivePaperSession:
         self.sleeve_c = SleeveCAlphaEnsemble(
             cost_model=self.cost_model,
             signals=sleeve_c_library,
-            cost_hurdle=2.0,
+            cost_hurdle=1.2,
         )
 
         # In-memory store for strategy indicators
@@ -127,18 +127,36 @@ class LivePaperSession:
         self.is_running = False
 
     def preload_history(self) -> None:
-        """Preloads recent bars from real dataset to prime strategy lookbacks."""
-        try:
-            from apex.data.store import load_real_market_data
-            if os.path.exists("data_real"):
-                historical_store = load_real_market_data("data_real")
-                for sym in self.symbols:
-                    if sym in historical_store._bars:
-                        recent_bars = historical_store._bars[sym][-60:]
-                        self.store.add_bars(sym, recent_bars)
-                print(f"[INIT] Preloaded 60 historical bars per symbol for indicators & trend models.")
-        except Exception as e:
-            print(f"[WARN] Could not preload historical bars: {e}")
+        """Preloads recent 50 bars directly from Binance CCXT to prime strategy lookbacks."""
+        print("[INIT] Priming strategy indicators with recent live hourly candles from Binance...")
+        for sym in self.symbols:
+            try:
+                raw_bars = self.exchange.fetch_ohlcv(sym, timeframe="1h", limit=50)
+                fr = 0.0001
+                try:
+                    fr_info = self.exchange.fetch_funding_rate(sym)
+                    if fr_info and "fundingRate" in fr_info and fr_info["fundingRate"] is not None:
+                        fr = float(fr_info["fundingRate"])
+                except Exception:
+                    pass
+
+                market_bars = []
+                for b in raw_bars:
+                    mb = MarketBar(
+                        symbol=sym,
+                        timestamp_ms=int(b[0]),
+                        open=float(b[1]),
+                        high=float(b[2]),
+                        low=float(b[3]),
+                        close=float(b[4]),
+                        volume=float(b[5]),
+                        funding_rate_8h=fr,
+                    )
+                    market_bars.append(mb)
+                self.store.add_bars(sym, market_bars)
+                print(f"  ✔ Primed {len(market_bars)} bars for {sym}")
+            except Exception as e:
+                print(f"  [WARN] Failed fetching history for {sym}: {e}")
 
     def fetch_live_market_bar(self, symbol: str) -> Optional[MarketBar]:
         """Fetches live ticker and funding rate via CCXT."""
@@ -262,6 +280,15 @@ class LivePaperSession:
                 )
                 if success:
                     print(f"  [ORDER SUBMITTED] {ord_event.side} {ord_event.quantity:.4f} {ord_event.symbol} @ ${ord_event.price:,.2f} (ID: {res})")
+                    fill = self.order_manager.simulate_order_fill(res, ord_event.price, now_ms)
+                    if fill:
+                        print(f"  >>> [FILL] {fill.side} {fill.quantity:.4f} {fill.symbol} @ ${fill.fill_price:,.2f} | Fee: ${fill.fee_paid:.2f}")
+                        self.drift_monitor.record_fill_telemetry(
+                            intended_price=ord_event.price,
+                            fill_price=fill.fill_price,
+                            side=fill.side,
+                            latency_ms=120.0,
+                        )
                 else:
                     print(f"  [ORDER REJECTED] {res}")
 
