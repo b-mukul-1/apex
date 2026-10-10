@@ -84,3 +84,39 @@ def test_funding_harvester():
     assert len(rep.top_opportunities) == 1
     assert rep.top_opportunities[0].recommended_side == "SHORT"
     assert rep.top_opportunities[0].annualized_apr > 20.0
+
+
+def test_portfolio_starting_cash_restoration():
+    from apex.backtest.portfolio import Portfolio
+    # Ensure starting cash restores previous profit without changing initial baseline
+    portfolio = Portfolio(initial_capital=100_000.0, starting_cash=104_065.87)
+    assert portfolio.initial_capital == 100_000.0
+    assert portfolio.cash == 104_065.87
+    assert portfolio.total_equity == 104_065.87
+
+
+def test_session_state_persistence_cycle(tmp_path):
+    from apex.execution.live_paper_runner import LivePaperSession
+    state_file = str(tmp_path / "test_session_state.json")
+
+    # 1. Initialize session with starting cash
+    session = LivePaperSession(
+        initial_capital=100_000.0,
+        starting_cash=104_065.87,
+        state_file=state_file,
+    )
+    assert session.portfolio.total_equity == 104_065.87
+    assert session.profit_ratchet.is_active is True
+    assert session.profit_ratchet.ratchet_floor >= 102_800.0
+
+    # 2. Persist state
+    session.persist_state()
+
+    # 3. Spin up fresh session and verify state restores
+    resumed_session = LivePaperSession(
+        initial_capital=100_000.0,
+        state_file=state_file,
+    )
+    assert resumed_session.portfolio.total_equity == 104_065.87
+    assert resumed_session.profit_ratchet.peak_equity == 104_065.87
+    assert resumed_session.profit_ratchet.is_active is True

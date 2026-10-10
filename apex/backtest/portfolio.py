@@ -75,9 +75,10 @@ class Portfolio:
         risk_per_trade_pct: float = 0.0075,  # 0.75% equity risk per position
         max_gross_leverage: float = 3.0,
         sleeve_weights: Optional[Dict[str, float]] = None,
+        starting_cash: Optional[float] = None,
     ):
         self.initial_capital = initial_capital
-        self.cash = initial_capital
+        self.cash = float(starting_cash) if starting_cash is not None else initial_capital
         self.risk_per_trade_pct = risk_per_trade_pct
         self.max_gross_leverage = max_gross_leverage
         self.sleeve_weights = sleeve_weights or {

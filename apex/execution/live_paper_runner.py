@@ -54,10 +54,12 @@ class LivePaperSession:
         self,
         symbols: Optional[List[str]] = None,
         initial_capital: float = 100_000.0,
+        starting_cash: Optional[float] = None,
         poll_interval_sec: float = 5.0,
         testnet: bool = False,
         api_key: Optional[str] = None,
         api_secret: Optional[str] = None,
+        state_file: Optional[str] = "apex_session_state.json",
     ):
         self.symbols = symbols or [
             "BTC/USDT:USDT",
@@ -86,6 +88,21 @@ class LivePaperSession:
         self.webhook_url: Optional[str] = None
         self.api_secret: Optional[str] = None
         self.logs: List[str] = []
+        self.state_file = state_file
+
+        # Check persisted session state or starting cash
+        persisted = self.load_persisted_state()
+        actual_cash = initial_capital
+        peak_equity = initial_capital
+
+        if persisted and "cash" in persisted:
+            actual_cash = float(persisted["cash"])
+            peak_equity = float(persisted.get("peak_equity", actual_cash))
+            self.log(f"[PERSISTENCE] Restored existing session state: Cash=${actual_cash:,.2f}, Peak=${peak_equity:,.2f}")
+        elif starting_cash is not None:
+            actual_cash = float(starting_cash)
+            peak_equity = max(actual_cash, initial_capital)
+            self.log(f"[PERSISTENCE] Initialized session with starting cash: ${actual_cash:,.2f}")
 
         # Initialize CCXT exchange clients
         # 1. Clean public client for market data (configured for testnet if testnet=True to avoid US geo-blocks)
@@ -126,7 +143,12 @@ class LivePaperSession:
         # Core APEX modules
         self.cost_model = CostModel()
         self.risk_service = RiskService()
-        self.portfolio = Portfolio(initial_capital=initial_capital)
+        self.portfolio = Portfolio(
+            initial_capital=initial_capital,
+            starting_cash=actual_cash,
+        )
+        self.risk_service.high_water_mark = peak_equity
+        self.risk_service.daily_start_equity = initial_capital
         self.order_manager = OrderManager(
             risk_service=self.risk_service,
             cost_model=self.cost_model,
@@ -136,7 +158,10 @@ class LivePaperSession:
         self.decay_monitor = SignalDecayMonitor()
 
         # Advanced Institutional Algos
-        self.profit_ratchet = ProfitRatchet(initial_capital=initial_capital)
+        self.profit_ratchet = ProfitRatchet(
+            initial_capital=initial_capital,
+            peak_equity=peak_equity,
+        )
         self.btc_regime = BtcRegimeFilter()
         self.funding_harvester = FundingHarvester()
 
@@ -174,6 +199,43 @@ class LivePaperSession:
         if len(self.logs) > 60:
             self.logs.pop(0)
         print(entry)
+
+    def load_persisted_state(self) -> Optional[Dict]:
+        """Loads saved session state from disk if available."""
+        if not getattr(self, "state_file", None):
+            return None
+        try:
+            if os.path.exists(self.state_file):
+                import json
+                with open(self.state_file, "r") as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"[PERSISTENCE WARN] Could not load state from {self.state_file}: {e}")
+        return None
+
+    def persist_state(self) -> None:
+        """Atomically saves portfolio equity and high water mark to disk."""
+        if not getattr(self, "state_file", None):
+            return
+        try:
+            import json
+            data = {
+                "initial_capital": float(self.portfolio.initial_capital),
+                "cash": float(self.portfolio.cash),
+                "equity": float(self.portfolio.total_equity),
+                "peak_equity": float(self.profit_ratchet.peak_equity),
+                "ratchet_floor": float(self.profit_ratchet.ratchet_floor),
+                "total_closed_trades": len(self.portfolio.trades),
+                "total_orders_filled": len(self.order_manager.order_history),
+                "iteration_count": self.iteration_count,
+                "timestamp": time.time(),
+            }
+            tmp_path = f"{self.state_file}.tmp"
+            with open(tmp_path, "w") as f:
+                json.dump(data, f, indent=2)
+            os.replace(tmp_path, self.state_file)
+        except Exception:
+            pass
 
     def preload_history(self) -> None:
         """Preloads recent 50 bars directly from Binance CCXT to prime strategy lookbacks with automatic local parquet fallback."""
@@ -416,6 +478,9 @@ class LivePaperSession:
         if self.webhook_url:
             self.push_telemetry_webhook()
 
+        # 7. Persist session state snapshot to disk
+        self.persist_state()
+
     def get_current_state(self) -> Dict:
         """Returns structured JSON state for the web dashboard."""
         drift_report = self.drift_monitor.evaluate_drift()
@@ -645,11 +710,19 @@ def start_session_from_env():
     webhook_url = os.environ.get("VERCEL_WEBHOOK_URL")
     api_secret_token = os.environ.get("APEX_API_SECRET", "apex_secure_token")
 
+    # Baseline capital benchmark ($100,000.00)
+    initial_baseline = float(os.environ.get("INITIAL_CAPITAL", "100000.00"))
+    # Restored paper capital carrying over from overnight run ($104,065.87)
+    starting_equity = float(os.environ.get("STARTING_EQUITY", os.environ.get("INITIAL_CASH", "104065.87")))
+
     session = LivePaperSession(
+        initial_capital=initial_baseline,
+        starting_cash=starting_equity,
         poll_interval_sec=float(os.environ.get("POLL_INTERVAL", "5.0")),
         testnet=testnet,
         api_key=api_key,
         api_secret=api_secret,
+        state_file=os.environ.get("APEX_STATE_FILE", "apex_session_state.json"),
     )
     session.webhook_url = webhook_url
     session.api_secret = api_secret_token

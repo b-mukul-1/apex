@@ -32,15 +32,19 @@ class ProfitRatchet:
         initial_capital: float = 100_000.0,
         activation_hurdle_pct: float = 0.015,  # Activates when profit >= +1.5%
         trail_pullback_pct: float = 0.015,     # Harvests if equity drops 1.5% from peak
+        peak_equity: Optional[float] = None,
     ):
         self.initial_capital = initial_capital
         self.activation_hurdle_pct = activation_hurdle_pct
         self.trail_pullback_pct = trail_pullback_pct
 
-        self.peak_equity = initial_capital
+        self.peak_equity = float(peak_equity) if peak_equity is not None else initial_capital
         self.ratchet_floor = initial_capital
         self.is_active = False
         self.harvest_triggered = False
+
+        if self.peak_equity > self.initial_capital:
+            self.update(self.peak_equity)
 
     def update(self, current_equity: float) -> RatchetReport:
         """

@@ -1,0 +1,11 @@
+{
+  "initial_capital": 100000.0,
+  "cash": 104065.87,
+  "equity": 104065.87,
+  "peak_equity": 104065.87,
+  "ratchet_floor": 102800.0,
+  "total_closed_trades": 18,
+  "total_orders_filled": 64,
+  "iteration_count": 4280,
+  "timestamp": 1728559000
+}
