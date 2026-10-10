@@ -23,6 +23,9 @@ from apex.backtest.cost_model import CostModel
 from apex.backtest.portfolio import Portfolio
 from apex.backtest.events import SignalEvent
 from apex.risk.service import RiskService
+from apex.risk.profit_ratchet import ProfitRatchet
+from apex.signals.btc_regime import BtcRegimeFilter
+from apex.signals.funding_harvester import FundingHarvester
 from apex.execution.order_manager import OrderManager
 from apex.monitor.live_tracker import LiveVsBacktestMonitor
 from apex.monitor.decay_monitor import SignalDecayMonitor
@@ -131,6 +134,11 @@ class LivePaperSession:
         )
         self.drift_monitor = LiveVsBacktestMonitor(expected_slippage_bps=2.0)
         self.decay_monitor = SignalDecayMonitor()
+
+        # Advanced Institutional Algos
+        self.profit_ratchet = ProfitRatchet(initial_capital=initial_capital)
+        self.btc_regime = BtcRegimeFilter()
+        self.funding_harvester = FundingHarvester()
 
         # Multi-sleeve strategies
         self.sleeve_a = SleeveACarryStrategy(min_annualized_funding_hurdle=0.02)
@@ -324,7 +332,15 @@ class LivePaperSession:
                         latency_ms=120.0,
                     )
 
-        # 3. Generate Signals from Sleeves
+        # 3. Dynamic Profit Ratchet & Macro Regime State
+        ratchet_rep = self.profit_ratchet.update(self.portfolio.total_equity)
+        btc_rep = self.btc_regime.evaluate(self.store, now_ms)
+        harvester_rep = self.funding_harvester.evaluate(self.store, self.symbols, now_ms)
+
+        if ratchet_rep.should_harvest:
+            self.log(f"  [PROFIT RATCHET] Threshold breached! Locking gains: Equity ${self.portfolio.total_equity:,.2f} < Floor ${ratchet_rep.ratchet_floor_equity:,.2f}")
+
+        # 4. Generate Signals from Sleeves
         signals: List[SignalEvent] = []
         for sym in self.symbols:
             bars = self.store.get_bars_pit(sym, current_time_ms=now_ms, lookback_bars=20)
@@ -342,12 +358,18 @@ class LivePaperSession:
             if sigs_b:
                 signals.extend(sigs_b)
 
-            # Sleeve C
+            # Sleeve C (Modulated by BTC Macro-Regime Filter)
             sigs_c = self.sleeve_c.on_bar(latest_bar, self.store, self.portfolio)
             if sigs_c:
-                signals.extend(sigs_c)
+                for sig in sigs_c:
+                    if sig.direction > 0 and not btc_rep.altcoin_long_allowed and "BTC" not in sig.symbol:
+                        # Veto altcoin longs during BTC defensive breakdown
+                        continue
+                    if "BTC" not in sig.symbol:
+                        sig.strength *= btc_rep.altcoin_size_multiplier
+                    signals.append(sig)
 
-        # 4. Construct Netted Orders & Submit through Risk Gate
+        # 5. Construct Netted Orders & Submit through Risk Gate
         if signals:
             orders = self.portfolio.construct_netted_orders(signals, current_prices)
             for ord_event in orders:
@@ -442,9 +464,14 @@ class LivePaperSession:
         hwm = max(self.risk_service.high_water_mark, eq)
         dd = (hwm - eq) / max(hwm, 1e-4) * 100.0
 
+        now_ms = int(time.time() * 1000)
+        ratchet_rep = self.profit_ratchet.update(eq)
+        btc_rep = self.btc_regime.evaluate(self.store, now_ms)
+        harvester_rep = self.funding_harvester.evaluate(self.store, self.symbols, now_ms)
+
         return {
             "source": "APEX_247_CLOUD_DAEMON",
-            "version": "v1.2.0-sentinel",
+            "version": "v1.3.0-sentinel",
             "status": "ONLINE",
             "exchange": "Binance USDS-M Perpetuals",
             "mode": "BINANCE_FUTURES_TESTNET" if self.testnet else "PAPER_TRADING_GATEWAY",
@@ -458,9 +485,32 @@ class LivePaperSession:
             "gross_leverage": float(self.portfolio.gross_leverage),
             "max_leverage_cap": 3.0,
             "current_drawdown_pct": float(dd),
+            "total_closed_trades": len(self.portfolio.trades),
+            "total_orders_filled": len(self.order_manager.order_history),
             "positions": positions_list,
             "active_orders": orders_list,
             "recent_trades": trades_list,
+            "profit_ratchet": {
+                "is_active": ratchet_rep.is_ratchet_active,
+                "locked_profit": float(ratchet_rep.locked_profit_amount),
+                "ratchet_floor": float(ratchet_rep.ratchet_floor_equity),
+                "peak_equity": float(ratchet_rep.peak_equity),
+                "status_summary": ratchet_rep.status_summary,
+            },
+            "btc_regime": {
+                "regime": btc_rep.regime,
+                "btc_price": float(btc_rep.btc_price),
+                "ema_20": float(btc_rep.ema_20),
+                "distance_pct": float(btc_rep.distance_pct),
+                "altcoin_long_allowed": btc_rep.altcoin_long_allowed,
+                "status_summary": btc_rep.status_summary,
+            },
+            "funding_harvester": {
+                "next_payout_utc": harvester_rep.next_payout_utc,
+                "minutes_until_payout": harvester_rep.minutes_until_payout,
+                "estimated_apr": float(harvester_rep.estimated_annualized_yield_pct),
+                "status_summary": harvester_rep.status_summary,
+            },
             "logs": self.logs[-25:],
             "risk_sentinel": {
                 "kill_switch_active": self.risk_service.is_kill_switch_active,

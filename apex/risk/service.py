@@ -85,7 +85,7 @@ class RiskService:
         self.high_water_mark = max(self.high_water_mark, current_equity)
         drawdown_pct = (self.high_water_mark - current_equity) / max(self.high_water_mark, 1e-4)
 
-        # 1. Daily loss check
+        # 1. Daily loss check & recovery
         daily_loss_pct = (self.daily_start_equity - current_equity) / max(self.daily_start_equity, 1e-4)
         if daily_loss_pct >= self.daily_loss_limit and not self.is_24h_halted:
             self.is_24h_halted = True
@@ -96,6 +96,9 @@ class RiskService:
                 description=f"Daily loss reached {daily_loss_pct * 100:.2f}% >= {self.daily_loss_limit * 100:.1f}%",
                 action_taken="FLATTEN_SLEEVE_C_AND_HALT_24H",
             ))
+        elif current_equity >= self.daily_start_equity and self.is_24h_halted:
+            # When equity is in profit relative to daily baseline, restore normal trading
+            self.is_24h_halted = False
 
         # 2. Drawdown ladder
         if drawdown_pct >= self.dd_full_halt:

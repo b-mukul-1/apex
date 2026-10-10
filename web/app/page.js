@@ -75,6 +75,11 @@ export default function Dashboard() {
   const logs = data?.logs || [];
   const sentinel = data?.risk_sentinel || {};
   const telemetry = data?.telemetry || {};
+  const ratchet = data?.profit_ratchet || {};
+  const btcRegime = data?.btc_regime || {};
+  const harvester = data?.funding_harvester || {};
+  const totalTrades = data?.total_closed_trades ?? trades.length;
+  const totalOrders = data?.total_orders_filled ?? trades.length;
 
   return (
     <div className="app-container">
@@ -172,6 +177,69 @@ export default function Dashboard() {
           <div className="kpi-value">{drawdown.toFixed(2)}%</div>
           <div className="kpi-subtext">
             <span>Ladder: {sentinel?.drawdown_ladder_level || "NORMAL (100% Size)"}</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Institutional Alpha & Risk Engines Strip */}
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+        {/* Profit Ratchet */}
+        <div className="glass-panel" style={{ padding: "16px", borderLeft: "4px solid var(--accent-emerald)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <span style={{ fontSize: "12px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              💎 Profit Ratchet & Lock
+            </span>
+            <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: ratchet?.is_active ? "var(--accent-emerald)" : "var(--accent-cyan)", background: "rgba(255,255,255,0.05)", padding: "2px 6px", borderRadius: "4px" }}>
+              {ratchet?.is_active ? "LOCKED & ACTIVE" : "STANDBY"}
+            </span>
+          </div>
+          <div style={{ fontSize: "16px", fontWeight: 700, color: "#fff", fontFamily: "var(--font-mono)", marginBottom: "4px" }}>
+            Locked Floor: +${(ratchet?.locked_profit || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+          </div>
+          <div style={{ fontSize: "11px", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+            {ratchet?.status_summary || "Ratchets stop floor when profit > 1.5% to bank gains into cash"}
+          </div>
+        </div>
+
+        {/* BTC Macro Regime Filter */}
+        <div className="glass-panel" style={{ padding: "16px", borderLeft: "4px solid var(--accent-cyan)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <span style={{ fontSize: "12px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              🧭 BTC Macro-Regime Filter
+            </span>
+            <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: btcRegime?.regime === "BULL_EXPANSION" ? "var(--accent-emerald)" : btcRegime?.regime === "BEAR_DEFENSIVE" ? "var(--accent-rose)" : "var(--accent-cyan)", background: "rgba(255,255,255,0.05)", padding: "2px 6px", borderRadius: "4px" }}>
+              {btcRegime?.regime || "BULL_EXPANSION"}
+            </span>
+          </div>
+          <div style={{ fontSize: "16px", fontWeight: 700, color: "#fff", fontFamily: "var(--font-mono)", marginBottom: "4px" }}>
+            BTC: ${(btcRegime?.btc_price || 82800).toLocaleString("en-US", { minimumFractionDigits: 1 })}
+            <span style={{ fontSize: "12px", color: (btcRegime?.distance_pct || 0) >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)", marginLeft: "8px" }}>
+              {(btcRegime?.distance_pct || 0) >= 0 ? "+" : ""}{(btcRegime?.distance_pct || 0).toFixed(2)}% vs EMA20
+            </span>
+          </div>
+          <div style={{ fontSize: "11px", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+            {btcRegime?.status_summary || "Gates altcoin risk when Bitcoin breaks macro structural support"}
+          </div>
+        </div>
+
+        {/* 8-Hour Funding Harvester & Lifetime Trades */}
+        <div className="glass-panel" style={{ padding: "16px", borderLeft: "4px solid #8b5cf6" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <span style={{ fontSize: "12px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+              ⏱️ 8h Funding Yield Harvester
+            </span>
+            <span style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "#a78bfa", background: "rgba(255,255,255,0.05)", padding: "2px 6px", borderRadius: "4px" }}>
+              {harvester?.next_payout_utc || "16:00 UTC"}
+            </span>
+          </div>
+          <div style={{ fontSize: "16px", fontWeight: 700, color: "#fff", fontFamily: "var(--font-mono)", marginBottom: "4px" }}>
+            {harvester?.minutes_until_payout != null ? `${harvester.minutes_until_payout}m to payout` : "Harvesting Carry"}
+            <span style={{ fontSize: "12px", color: "var(--accent-cyan)", marginLeft: "8px" }}>
+              • {totalOrders} Fills ({totalTrades} Closed)
+            </span>
+          </div>
+          <div style={{ fontSize: "11px", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+            {harvester?.status_summary || "Captures cash funding yield across Binance perpetuals"}
           </div>
         </div>
       </section>
