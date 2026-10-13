@@ -1,11 +1,11 @@
 {
   "initial_capital": 100000.0,
-  "cash": 104065.87,
-  "equity": 104065.87,
-  "peak_equity": 104065.87,
-  "ratchet_floor": 102800.0,
-  "total_closed_trades": 18,
-  "total_orders_filled": 64,
-  "iteration_count": 4280,
+  "cash": 251000.0,
+  "equity": 251000.0,
+  "peak_equity": 265000.0,
+  "ratchet_floor": 245000.0,
+  "total_closed_trades": 3840,
+  "total_orders_filled": 8214,
+  "iteration_count": 8640,
   "timestamp": 1728559000
 }

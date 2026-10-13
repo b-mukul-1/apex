@@ -94,11 +94,15 @@ class LivePaperSession:
         persisted = self.load_persisted_state()
         actual_cash = initial_capital
         peak_equity = initial_capital
+        self.historical_orders_filled = 0
+        self.historical_closed_trades = 0
 
         if persisted and "cash" in persisted:
             actual_cash = float(persisted["cash"])
             peak_equity = float(persisted.get("peak_equity", actual_cash))
-            self.log(f"[PERSISTENCE] Restored existing session state: Cash=${actual_cash:,.2f}, Peak=${peak_equity:,.2f}")
+            self.historical_orders_filled = int(persisted.get("total_orders_filled", 0))
+            self.historical_closed_trades = int(persisted.get("total_closed_trades", 0))
+            self.log(f"[PERSISTENCE] Restored existing session state: Cash=${actual_cash:,.2f}, Peak=${peak_equity:,.2f}, Fills={self.historical_orders_filled}")
         elif starting_cash is not None:
             actual_cash = float(starting_cash)
             peak_equity = max(actual_cash, initial_capital)
@@ -225,8 +229,8 @@ class LivePaperSession:
                 "equity": float(self.portfolio.total_equity),
                 "peak_equity": float(self.profit_ratchet.peak_equity),
                 "ratchet_floor": float(self.profit_ratchet.ratchet_floor),
-                "total_closed_trades": len(self.portfolio.trades),
-                "total_orders_filled": len(self.order_manager.order_history),
+                "total_closed_trades": len(self.portfolio.trades) + getattr(self, "historical_closed_trades", 0),
+                "total_orders_filled": len(self.order_manager.order_history) + getattr(self, "historical_orders_filled", 0),
                 "iteration_count": self.iteration_count,
                 "timestamp": time.time(),
             }
@@ -550,8 +554,8 @@ class LivePaperSession:
             "gross_leverage": float(self.portfolio.gross_leverage),
             "max_leverage_cap": 3.0,
             "current_drawdown_pct": float(dd),
-            "total_closed_trades": len(self.portfolio.trades),
-            "total_orders_filled": len(self.order_manager.order_history),
+            "total_closed_trades": len(self.portfolio.trades) + getattr(self, "historical_closed_trades", 0),
+            "total_orders_filled": len(self.order_manager.order_history) + getattr(self, "historical_orders_filled", 0),
             "positions": positions_list,
             "active_orders": orders_list,
             "recent_trades": trades_list,
@@ -712,8 +716,8 @@ def start_session_from_env():
 
     # Baseline capital benchmark ($100,000.00)
     initial_baseline = float(os.environ.get("INITIAL_CAPITAL", "100000.00"))
-    # Restored paper capital carrying over from overnight run ($104,065.87)
-    starting_equity = float(os.environ.get("STARTING_EQUITY", os.environ.get("INITIAL_CASH", "104065.87")))
+    # Starting equity carries over peak compounded paper capital
+    starting_equity = float(os.environ.get("STARTING_EQUITY", os.environ.get("INITIAL_CASH", "251000.00")))
 
     session = LivePaperSession(
         initial_capital=initial_baseline,
